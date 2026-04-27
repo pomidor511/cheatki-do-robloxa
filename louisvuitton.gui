@@ -1,0 +1,1245 @@
+-- ================================================================
+--  MOOZE UI  |  Kompletny Lua UI Framework
+--  Styl: MOOZE (ciemne tlo, czerwony akcent, lewy sidebar,
+--         gorne taby, sekcje MAIN/CHECKS/ACTIVATION)
+--
+--  JAK UZYWAC:
+--    1. Podmien blok "DRAW API" na API swojego executora
+--    2. Podmien blok "INPUT API" na API swojego executora
+--    3. Zarejestruj on_draw() i on_tick() w swoim executorze
+--    4. Dodawaj/usuwaj opcje edytujac tabele Menu.*
+--
+--  KOMPATYBILNOSC:
+--    Synapse X, KRNL, Fluxus, ScriptWare, Wave
+--    (lub dowolny executor z draw + input API)
+-- ================================================================
+
+-- ----------------------------------------------------------------
+--  STYL  (wszystkie kolory i wymiary w jednym miejscu)
+-- ----------------------------------------------------------------
+local S = {
+    -- Kolory {R,G,B,A}
+    bg          = {26,  26,  26,  248},
+    bg2         = {22,  22,  22,  255},
+    bg3         = {16,  16,  16,  255},
+    bg4         = {12,  12,  12,  255},
+    accent      = {232, 64,  64,  255},   -- czerwony
+    accent_dim  = {180, 40,  40,  200},
+    border      = {38,  38,  38,  255},
+    border2     = {28,  28,  28,  255},
+    text        = {204, 204, 204, 255},
+    text_dim    = {80,  80,  80,  255},
+    text_bright = {238, 238, 238, 255},
+    white       = {255, 255, 255, 255},
+    sep         = {30,  30,  30,  255},
+
+    -- Wymiary
+    win_x        = 100,
+    win_y        = 80,
+    win_w        = 840,
+    win_h        = 520,
+    sidebar_w    = 180,
+    topbar_h     = 42,
+    padding      = 30,
+    item_h       = 36,
+    section_lbl  = 32,
+}
+
+-- ----------------------------------------------------------------
+--  STATE
+-- ----------------------------------------------------------------
+local State = {
+    visible      = true,
+    dragging     = false,
+    drag_ox      = 0,
+    drag_oy      = 0,
+    active_sec   = 1,   -- index aktywnej sekcji w sidebarze
+    active_tab   = 1,   -- index aktywnego gornego taba
+    open_dd      = nil, -- aktualnie otwarty dropdown
+    binding      = nil, -- aktualnie bindowany keybind
+    scroll_y     = 0,   -- scroll contentu
+}
+
+-- ================================================================
+--  DANE MENU
+--  Struktura:
+--    Menu.sections = lista sekcji sidebarowych
+--    Kazda sekcja ma: name, tabs[]
+--    Kazdy tab ma: panels[] (lista sekcji MAIN/CHECKS/ACTIVATION)
+--    Kazdy panel ma: title, items[]
+--    Kazdy item ma: type + pola specyficzne dla danego typu
+--
+--  Typy itemow:
+--    checkbox  – { type, label, value, callback }
+--    slider    – { type, label, min, max, value, step, fmt, callback }
+--    dropdown  – { type, label, options, value, callback }
+--    toggle    – { type, label, value, callback }
+--    keybind   – { type, label, key, callback }
+--    multisel  – { type, label, options, values, callback }
+--    button    – { type, label, callback }
+-- ================================================================
+
+local Menu = { sections = {} }
+
+-- ────────────────────────────────────────────
+--  SEKCJA 1: ASSISTANCE
+-- ────────────────────────────────────────────
+Menu.sections[1] = {
+    name = "Assistance",
+    icon = "+",
+    tabs = {
+
+        -- TAB: General
+        {
+            name = "General",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Enabled", value=true,
+                          callback=function(v) print("[AIM] Enabled:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="dropdown", label="Constant",
+                          options={"Knocked, Self-Knocked","Knocked","None","All"},
+                          value=1,
+                          callback=function(v,o) print("[AIM] Constant:", o) end },
+
+                        { type="dropdown", label="When Selecting",
+                          options={"Knocked, Self-Knocked, Visible",
+                                   "Knocked, Self-Knocked",
+                                   "Visible","None"},
+                          value=1,
+                          callback=function(v,o) print("[AIM] When Selecting:", o) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="Key", key="NONE",
+                          callback=function(k) print("[AIM] Key:", k) end },
+
+                        { type="dropdown", label="Mode",
+                          options={"Hold","Toggle","Always"},
+                          value=1,
+                          callback=function(v,o) print("[AIM] Mode:", o) end },
+                    }
+                },
+            }
+        },
+
+        -- TAB: Silent Aim
+        {
+            name = "Silent Aim",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Enabled", value=false,
+                          callback=function(v) print("[SA] Enabled:", v) end },
+
+                        { type="slider", label="FOV",
+                          min=0, max=360, value=30, step=1,
+                          fmt=function(v) return tostring(v) end,
+                          callback=function(v) print("[SA] FOV:", v) end },
+
+                        { type="slider", label="Prediction",
+                          min=0, max=100, value=50, step=1,
+                          fmt=function(v) return v.."%" end,
+                          callback=function(v) print("[SA] Prediction:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="dropdown", label="Target",
+                          options={"Nearest to Cursor","Nearest to Player",
+                                   "Lowest HP","Highest HP"},
+                          value=1,
+                          callback=function(v,o) print("[SA] Target:", o) end },
+
+                        { type="toggle", label="Ignore Teammates", value=true,
+                          callback=function(v) print("[SA] IgnoreTeam:", v) end },
+
+                        { type="toggle", label="Visible Only", value=false,
+                          callback=function(v) print("[SA] Visible:", v) end },
+
+                        { type="toggle", label="Through Walls", value=false,
+                          callback=function(v) print("[SA] Walls:", v) end },
+                    }
+                },
+                {
+                    title = "HITBOXES",
+                    items = {
+                        { type="multisel", label="",
+                          options={"Head","Upper Torso","Lower Torso",
+                                   "Left Arm","Right Arm","Left Leg","Right Leg"},
+                          values={true,true,false,false,false,false,false},
+                          callback=function(i,v) print("[SA] Hitbox "..i..":", v) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="Key", key="NONE",
+                          callback=function(k) print("[SA] Key:", k) end },
+                    }
+                },
+            }
+        },
+
+        -- TAB: Aimbot
+        {
+            name = "Aimbot",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Enabled", value=false,
+                          callback=function(v) print("[AB] Enabled:", v) end },
+
+                        { type="slider", label="Smoothness",
+                          min=0, max=100, value=40, step=1,
+                          fmt=function(v) return tostring(v) end,
+                          callback=function(v) print("[AB] Smooth:", v) end },
+
+                        { type="slider", label="FOV",
+                          min=0, max=360, value=60, step=1,
+                          fmt=function(v) return tostring(v) end,
+                          callback=function(v) print("[AB] FOV:", v) end },
+
+                        { type="slider", label="Prediction",
+                          min=0, max=100, value=60, step=1,
+                          fmt=function(v) return v.."%" end,
+                          callback=function(v) print("[AB] Prediction:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="dropdown", label="Target Priority",
+                          options={"Nearest to Cursor","Nearest to Player","Lowest HP"},
+                          value=1,
+                          callback=function(v,o) print("[AB] Priority:", o) end },
+
+                        { type="toggle", label="Ignore Teammates", value=true,
+                          callback=function(v) print("[AB] IgnoreTeam:", v) end },
+
+                        { type="toggle", label="Visible Only", value=true,
+                          callback=function(v) print("[AB] Visible:", v) end },
+
+                        { type="toggle", label="Auto Fire", value=false,
+                          callback=function(v) print("[AB] AutoFire:", v) end },
+                    }
+                },
+                {
+                    title = "HITBOXES",
+                    items = {
+                        { type="multisel", label="",
+                          options={"Head","Upper Torso","Lower Torso","Left Arm","Right Arm"},
+                          values={true,true,false,false,false},
+                          callback=function(i,v) print("[AB] Hitbox "..i..":", v) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="Key", key="NONE",
+                          callback=function(k) print("[AB] Key:", k) end },
+
+                        { type="dropdown", label="Mode",
+                          options={"Hold","Toggle","Always"},
+                          value=1,
+                          callback=function(v,o) print("[AB] Mode:", o) end },
+                    }
+                },
+            }
+        },
+
+        -- TAB: Trigger Bot
+        {
+            name = "Trigger Bot",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Enabled", value=false,
+                          callback=function(v) print("[TB] Enabled:", v) end },
+
+                        { type="slider", label="Delay",
+                          min=0, max=500, value=80, step=5,
+                          fmt=function(v) return v.."ms" end,
+                          callback=function(v) print("[TB] Delay:", v) end },
+
+                        { type="slider", label="Burst Delay",
+                          min=0, max=500, value=0, step=5,
+                          fmt=function(v) return v.."ms" end,
+                          callback=function(v) print("[TB] Burst:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="toggle", label="Ignore Teammates", value=true,
+                          callback=function(v) print("[TB] IgnoreTeam:", v) end },
+
+                        { type="toggle", label="Visible Only", value=true,
+                          callback=function(v) print("[TB] Visible:", v) end },
+
+                        { type="multisel", label="",
+                          options={"Head","Torso","Arms","Legs"},
+                          values={true,true,false,false},
+                          callback=function(i,v) print("[TB] Hitbox "..i..":", v) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="Key", key="NONE",
+                          callback=function(k) print("[TB] Key:", k) end },
+                    }
+                },
+            }
+        },
+    }
+}
+
+-- ────────────────────────────────────────────
+--  SEKCJA 2: EXPLOITS
+-- ────────────────────────────────────────────
+Menu.sections[2] = {
+    name = "Exploits",
+    icon = "",
+    tabs = {
+        {
+            name = "General",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Speed Hack", value=false,
+                          callback=function(v) print("[EX] Speed:", v) end },
+
+                        { type="slider", label="Speed Multiplier",
+                          min=1, max=10, value=2, step=0.1,
+                          fmt=function(v) return string.format("%.1fx",v) end,
+                          callback=function(v) print("[EX] SpeedMult:", v) end },
+
+                        { type="checkbox", label="Noclip", value=false,
+                          callback=function(v) print("[EX] Noclip:", v) end },
+
+                        { type="checkbox", label="Fly Hack", value=false,
+                          callback=function(v) print("[EX] Fly:", v) end },
+
+                        { type="checkbox", label="Infinite Jump", value=false,
+                          callback=function(v) print("[EX] InfJump:", v) end },
+
+                        { type="checkbox", label="Teleport to Player", value=false,
+                          callback=function(v) print("[EX] TP:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="dropdown", label="Constant",
+                          options={"Knocked, Self-Knocked","None","All"},
+                          value=1,
+                          callback=function(v,o) print("[EX] Constant:", o) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="Speed Key", key="NONE",
+                          callback=function(k) print("[EX] SpeedKey:", k) end },
+                        { type="keybind", label="Noclip Key", key="NONE",
+                          callback=function(k) print("[EX] NoclipKey:", k) end },
+                        { type="keybind", label="Fly Key", key="NONE",
+                          callback=function(k) print("[EX] FlyKey:", k) end },
+                    }
+                },
+            }
+        },
+    }
+}
+
+-- ────────────────────────────────────────────
+--  SEKCJA 3: MOVEMENT
+-- ────────────────────────────────────────────
+Menu.sections[3] = {
+    name = "Movement",
+    icon = "",
+    tabs = {
+        {
+            name = "General",
+            panels = {
+                {
+                    title = "MAIN",
+                    items = {
+                        { type="checkbox", label="Bunny Hop", value=true,
+                          callback=function(v) print("[MV] BHop:", v) end },
+
+                        { type="checkbox", label="Auto Strafe", value=false,
+                          callback=function(v) print("[MV] Strafe:", v) end },
+
+                        { type="checkbox", label="Long Jump", value=false,
+                          callback=function(v) print("[MV] LJump:", v) end },
+
+                        { type="slider", label="Jump Power",
+                          min=1, max=200, value=50, step=1,
+                          fmt=function(v) return tostring(v) end,
+                          callback=function(v) print("[MV] JumpPow:", v) end },
+
+                        { type="slider", label="Walk Speed",
+                          min=16, max=200, value=16, step=1,
+                          fmt=function(v) return tostring(v) end,
+                          callback=function(v) print("[MV] WalkSpeed:", v) end },
+                    }
+                },
+                {
+                    title = "CHECKS",
+                    items = {
+                        { type="dropdown", label="Constant",
+                          options={"Knocked, Self-Knocked","None","All"},
+                          value=1,
+                          callback=function(v,o) print("[MV] Constant:", o) end },
+                    }
+                },
+                {
+                    title = "ACTIVATION",
+                    items = {
+                        { type="keybind", label="BHop Key", key="SPACE",
+                          callback=function(k) print("[MV] BHopKey:", k) end },
+                    }
+                },
+            }
+        },
+    }
+}
+
+-- ────────────────────────────────────────────
+--  SEKCJA 4: CONFIG
+-- ────────────────────────────────────────────
+Menu.sections[4] = {
+    name = "Config",
+    icon = "",
+    tabs = {
+        {
+            name = "General",
+            panels = {
+                {
+                    title = "CONFIG MANAGER",
+                    items = {
+                        { type="button", label="Save Config",
+                          callback=function()
+                              Menu.save("mooze_cfg.lua")
+                              print("[CFG] Zapisano!")
+                          end },
+
+                        { type="button", label="Load Config",
+                          callback=function()
+                              Menu.load("mooze_cfg.lua")
+                              print("[CFG] Zaladowano!")
+                          end },
+
+                        { type="button", label="Reset to Default",
+                          callback=function()
+                              Menu.reset()
+                              print("[CFG] Reset!")
+                          end },
+                    }
+                },
+                {
+                    title = "DISPLAY",
+                    items = {
+                        { type="keybind", label="Menu Key", key="INSERT",
+                          callback=function(k)
+                              print("[CFG] MenuKey:", k)
+                          end },
+
+                        { type="slider", label="Opacity",
+                          min=30, max=100, value=95, step=1,
+                          fmt=function(v) return v.."%" end,
+                          callback=function(v)
+                              -- Aktualizuj przezroczystosc tla
+                              S.bg[4]  = math.floor(v / 100 * 255)
+                              S.bg2[4] = math.floor(v / 100 * 255)
+                          end },
+                    }
+                },
+            }
+        },
+    }
+}
+
+-- ────────────────────────────────────────────
+--  SEKCJA 5: SETTINGS
+-- ────────────────────────────────────────────
+Menu.sections[5] = {
+    name = "Settings",
+    icon = "",
+    tabs = {
+        {
+            name = "General",
+            panels = {
+                {
+                    title = "APPEARANCE",
+                    items = {
+                        { type="toggle", label="Stream Proof", value=false,
+                          callback=function(v) print("[SET] Stream:", v) end },
+
+                        { type="toggle", label="Watermark", value=true,
+                          callback=function(v) print("[SET] Watermark:", v) end },
+                    }
+                },
+                {
+                    title = "PROTECTION",
+                    items = {
+                        { type="keybind", label="Panic Key", key="END",
+                          callback=function(k) print("[SET] Panic:", k) end },
+
+                        { type="checkbox", label="Anti-AFK", value=true,
+                          callback=function(v) print("[SET] AntiAFK:", v) end },
+                    }
+                },
+            }
+        },
+    }
+}
+
+-- ================================================================
+--  CONFIG SAVE / LOAD / RESET
+-- ================================================================
+function Menu.save(path)
+    path = path or "mooze_cfg.lua"
+    local t = {}
+    table.insert(t, "-- MOOZE Config")
+    table.insert(t, "return {")
+    for si, sec in ipairs(Menu.sections) do
+        for ti, tab in ipairs(sec.tabs) do
+            for pi, panel in ipairs(tab.panels) do
+                for ii, item in ipairs(panel.items) do
+                    if item.type == "multisel" then
+                        for vi, val in ipairs(item.values) do
+                            table.insert(t, string.format(
+                                '  ["%d_%d_%d_%d_%d"] = %s,',
+                                si, ti, pi, ii, vi, tostring(val)))
+                        end
+                    elseif item.value ~= nil then
+                        local v
+                        if     type(item.value) == "boolean" then v = tostring(item.value)
+                        elseif type(item.value) == "number"  then v = tostring(item.value)
+                        elseif type(item.value) == "string"  then v = '"'..item.value..'"'
+                        end
+                        if v then
+                            table.insert(t, string.format(
+                                '  ["%d_%d_%d_%d"] = %s,',
+                                si, ti, pi, ii, v))
+                        end
+                    end
+                end
+            end
+        end
+    end
+    table.insert(t, "}")
+    local out = table.concat(t, "\n")
+    if writefile then writefile(path, out) end
+    return out
+end
+
+function Menu.load(path)
+    path = path or "mooze_cfg.lua"
+    if not (isfile and isfile(path)) then return end
+    local ok, cfg = pcall(function() return loadstring(readfile(path))() end)
+    if not ok or type(cfg) ~= "table" then return end
+    for si, sec in ipairs(Menu.sections) do
+        for ti, tab in ipairs(sec.tabs) do
+            for pi, panel in ipairs(tab.panels) do
+                for ii, item in ipairs(panel.items) do
+                    if item.type == "multisel" then
+                        for vi = 1, #item.values do
+                            local k = string.format("%d_%d_%d_%d_%d", si,ti,pi,ii,vi)
+                            if cfg[k] ~= nil then item.values[vi] = cfg[k] end
+                        end
+                    else
+                        local k = string.format("%d_%d_%d_%d", si,ti,pi,ii)
+                        if cfg[k] ~= nil then item.value = cfg[k] end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Menu.reset()
+    -- Przywroc wartosci domyslne (zakodowane w definicji)
+    -- Prosta implementacja: wywolaj loadstring na defaultowym stringu
+    print("[MOOZE] Reset wykonany (dodaj domyslne wartosci recznie)")
+end
+
+-- ================================================================
+--  GETTER / SETTER
+-- ================================================================
+function Menu.get(sec_name, tab_name, item_label)
+    for _, sec in ipairs(Menu.sections) do
+        if sec.name == sec_name then
+            for _, tab in ipairs(sec.tabs) do
+                if tab.name == tab_name then
+                    for _, panel in ipairs(tab.panels) do
+                        for _, item in ipairs(panel.items) do
+                            if item.label == item_label then
+                                return item.value
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+function Menu.set(sec_name, tab_name, item_label, val)
+    for _, sec in ipairs(Menu.sections) do
+        if sec.name == sec_name then
+            for _, tab in ipairs(sec.tabs) do
+                if tab.name == tab_name then
+                    for _, panel in ipairs(tab.panels) do
+                        for _, item in ipairs(panel.items) do
+                            if item.label == item_label then
+                                item.value = val
+                                if item.callback then item.callback(val) end
+                                return true
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- ================================================================
+--  DRAW API  —  podmien na API swojego executora
+-- ================================================================
+--  Synapse X / ScriptWare / Fluxus:
+--    draw.FilledRect(x1,y1,x2,y2)
+--    draw.OutlinedRect(x1,y1,x2,y2)
+--    draw.Line(x1,y1,x2,y2)
+--    draw.Text(x,y,text)
+--    draw.SetFont(font)
+--    draw.Color(r,g,b,a)
+--    draw.GetTextSize(text) -> w,h
+--    draw.CreateFont(name,size,weight)
+--    draw.FilledCircle(x,y,r,  r,g,b,a)  -- niektorzy maja
+-- ================================================================
+
+local F = {}  -- czcionki (tworzone raz)
+
+local function init_fonts()
+    F.title  = draw.CreateFont("Verdana", 12, 700)
+    F.normal = draw.CreateFont("Verdana", 11, 400)
+    F.small  = draw.CreateFont("Verdana",  9, 400)
+    F.mono   = draw.CreateFont("Courier New", 10, 400)
+    F.logo   = draw.CreateFont("Verdana", 13, 700)
+    F.sec    = draw.CreateFont("Verdana",  9, 700)
+end
+
+local D = {}
+
+function D.set_color(c)
+    draw.Color(c[1], c[2], c[3], c[4] or 255)
+end
+
+function D.rect(x, y, w, h, c)
+    D.set_color(c)
+    draw.FilledRect(x, y, x+w, y+h)
+end
+
+function D.outline(x, y, w, h, c, thickness)
+    thickness = thickness or 1
+    D.set_color(c)
+    for i = 0, thickness-1 do
+        draw.OutlinedRect(x+i, y+i, x+w-i, y+h-i)
+    end
+end
+
+function D.line(x1, y1, x2, y2, c)
+    D.set_color(c)
+    draw.Line(x1, y1, x2, y2)
+end
+
+function D.text(x, y, c, txt, font)
+    draw.SetFont(font or F.normal)
+    D.set_color(c)
+    draw.Text(x, y, tostring(txt))
+end
+
+function D.text_size(txt, font)
+    draw.SetFont(font or F.normal)
+    return draw.GetTextSize(tostring(txt))
+end
+
+function D.text_center(x, y, w, c, txt, font)
+    local tw = D.text_size(txt, font)
+    D.text(x + math.floor((w - tw) / 2), y, c, txt, font)
+end
+
+function D.text_right(x, y, w, c, txt, font)
+    local tw = D.text_size(txt, font)
+    D.text(x + w - tw - 4, y, c, txt, font)
+end
+
+-- ================================================================
+--  INPUT API  —  podmien na API swojego executora
+-- ================================================================
+local I = {}
+
+function I.mouse()
+    local x, y = input.GetCursorPos()
+    return x, y
+end
+
+function I.lmb_down()
+    return input.IsButtonDown(MOUSE_LEFT)
+end
+
+function I.lmb_pressed()
+    return input.IsButtonPressed(MOUSE_LEFT)
+end
+
+function I.key_pressed(k)
+    return input.IsButtonPressed(k)
+end
+
+function I.in_box(x, y, w, h)
+    local mx, my = I.mouse()
+    return mx >= x and mx <= x+w and my >= y and my <= y+h
+end
+
+-- ================================================================
+--  RENDER: TOPBAR
+-- ================================================================
+local function draw_topbar()
+    local x = S.win_x + S.sidebar_w
+    local y = S.win_y
+    local w = S.win_w - S.sidebar_w
+    local h = S.topbar_h
+
+    D.rect(x, y, w, h, S.bg3)
+    D.line(x, y+h, x+w, y+h, S.border)
+
+    local sec = Menu.sections[State.active_sec]
+    if not sec then return end
+    local tabs = sec.tabs
+
+    local tab_w = math.floor(w / math.max(#tabs, 1))
+
+    for i, tab in ipairs(tabs) do
+        local tx = x + (i-1) * tab_w
+        local active = (State.active_tab == i)
+
+        if active then
+            -- Czerwona linia na gorze aktywnego taba
+            D.rect(tx, y, tab_w, 2, S.accent)
+            D.text_center(tx, y + 13, tab_w, S.text_bright, tab.name, F.normal)
+        else
+            D.text_center(tx, y + 13, tab_w, S.text_dim, tab.name, F.normal)
+        end
+
+        -- Klikniecie
+        if I.lmb_pressed() and I.in_box(tx, y, tab_w, h) then
+            State.active_tab = i
+            State.scroll_y   = 0
+        end
+    end
+end
+
+-- ================================================================
+--  RENDER: SIDEBAR
+-- ================================================================
+local function draw_sidebar()
+    local x = S.win_x
+    local y = S.win_y
+    local w = S.sidebar_w
+    local h = S.win_h
+
+    D.rect(x, y, w, h, S.bg2)
+    D.line(x+w, y, x+w, y+h, S.border2)
+
+    -- Logo
+    local lh = 48
+    D.rect(x, y, w, lh, S.bg3)
+    D.line(x, y+lh, x+w, y+lh, S.border2)
+
+    -- "M" czerwone
+    D.rect(x+16, y+14, 20, 20, S.accent)
+    D.text(x+21, y+17, S.white, "M", F.logo)
+
+    D.text(x+42, y+18, S.text_bright, "MOOZE", F.logo)
+
+    -- Elementy sidebarowe
+    local iy = y + lh + 8
+    for i, sec in ipairs(Menu.sections) do
+        local active = (State.active_sec == i)
+        local ih = 36
+
+        if active then
+            D.rect(x, iy, w, ih, S.bg)
+            D.rect(x, iy, 2, ih, S.accent)  -- czerwona kreska z lewej
+        end
+
+        -- Ikona + nazwa
+        if sec.icon and sec.icon ~= "" then
+            D.text(x+14, iy+11, S.accent, sec.icon, F.small)
+            D.text(x+26, iy+11, active and S.text_bright or S.text_dim, sec.name, F.normal)
+        else
+            D.text(x+16, iy+11, active and S.text_bright or S.text_dim, sec.name, F.normal)
+        end
+
+        if I.lmb_pressed() and I.in_box(x, iy, w, ih) then
+            State.active_sec = i
+            State.active_tab = 1
+            State.scroll_y   = 0
+        end
+
+        iy = iy + ih
+    end
+
+    -- "Developer Build" na dole
+    D.text(x+16, y+h-20, S.text_dim, "Developer Build", F.small)
+end
+
+-- ================================================================
+--  RENDER: ITEM RENDERERS
+-- ================================================================
+
+-- Zwraca wysokosc narysowanego itemu
+local function render_checkbox(item, x, y, w)
+    local cbx = x
+    local cby = y + 8
+
+    -- Czerwony kwadrat (MOOZE styl)
+    if item.value then
+        D.rect(cbx, cby, 18, 18, S.accent)
+        -- Checkmark
+        draw.Color(255, 255, 255, 255)
+        draw.Line(cbx+3,  cby+10, cbx+7,  cby+14)
+        draw.Line(cbx+7,  cby+14, cbx+15, cby+5)
+    else
+        D.rect(cbx, cby, 18, 18, S.bg4)
+        D.outline(cbx, cby, 18, 18, S.border)
+    end
+
+    D.text(cbx+26, y+10, S.text, item.label, F.normal)
+
+    if I.lmb_pressed() and I.in_box(x, y, w, S.item_h) then
+        item.value = not item.value
+        if item.callback then item.callback(item.value) end
+    end
+
+    return S.item_h
+end
+
+local function render_toggle(item, x, y, w)
+    D.text(x, y+10, S.text, item.label, F.normal)
+
+    local tw = 30
+    local th = 16
+    local tx = x + w - tw
+    local ty = y + 10
+
+    if item.value then
+        D.rect(tx, ty, tw, th, S.accent)
+    else
+        D.rect(tx, ty, tw, th, S.bg4)
+        D.outline(tx, ty, tw, th, S.border)
+    end
+
+    -- Thumb
+    local thumb_x = item.value and (tx + tw - th + 2) or (tx + 2)
+    D.rect(thumb_x, ty+3, th-6, th-6, item.value and S.white or S.text_dim)
+
+    if I.lmb_pressed() and I.in_box(x, y, w, S.item_h) then
+        item.value = not item.value
+        if item.callback then item.callback(item.value) end
+    end
+
+    return S.item_h
+end
+
+local function render_slider(item, x, y, w)
+    item.min  = item.min  or 0
+    item.max  = item.max  or 100
+    item.step = item.step or 1
+
+    local val_str = item.fmt and item.fmt(item.value) or tostring(item.value)
+
+    -- Label
+    D.text(x, y+4, S.text, item.label, F.normal)
+
+    -- Wartosc po prawej stronie
+    local vw = D.text_size(val_str, F.small)
+    D.text(x + w - vw - 2, y+5, S.accent, val_str, F.small)
+
+    -- Track
+    local track_y = y + 22
+    local track_w = w
+    local track_h = 2
+
+    D.rect(x, track_y, track_w, track_h, S.bg4)
+
+    local pct = (item.value - item.min) / (item.max - item.min)
+    D.rect(x, track_y, math.floor(pct * track_w), track_h, S.accent)
+
+    -- Knob
+    local knob_x = x + math.floor(pct * track_w)
+    D.rect(knob_x - 4, track_y - 3, 8, 8, S.accent)
+
+    -- Interakcja
+    if I.lmb_down() and I.in_box(x - 2, track_y - 4, track_w + 4, 14) then
+        local mx = select(1, I.mouse())
+        local raw = (mx - x) / track_w
+        raw = math.max(0, math.min(1, raw))
+        local nv = item.min + raw * (item.max - item.min)
+        nv = math.floor(nv / item.step + 0.5) * item.step
+        if item.step < 1 then
+            local d = math.ceil(-math.log(item.step) / math.log(10))
+            nv = math.floor(nv * 10^d + 0.5) / 10^d
+        end
+        item.value = math.max(item.min, math.min(item.max, nv))
+        if item.callback then item.callback(item.value) end
+    end
+
+    return 32
+end
+
+local function render_dropdown(item, x, y, w)
+    local sel_text = item.options and item.options[item.value] or "None"
+
+    -- Label
+    D.text(x, y+10, S.text, item.label, F.normal)
+
+    -- Wartosc + strzalka po prawej
+    local vw = D.text_size(sel_text, F.normal)
+    D.text(x + w - vw - 18, y+10, S.text_dim, sel_text, F.normal)
+    D.text(x + w - 12, y+11, S.text_dim, "v", F.small)
+
+    -- Separator pod itemem
+    D.line(x, y + S.item_h - 1, x + w, y + S.item_h - 1, S.sep)
+
+    if I.lmb_pressed() and I.in_box(x, y, w, S.item_h) then
+        State.open_dd = (State.open_dd == item) and nil or item
+    end
+
+    -- Rozwiniety dropdown — rysowany NA WIERZCHU (po wszystkich itemach)
+    -- Wracamy do tego w osobnej funkcji draw_dropdowns()
+
+    return S.item_h
+end
+
+local function render_keybind(item, x, y, w)
+    D.text(x, y+10, S.text, item.label, F.normal)
+
+    local ktxt = (State.binding == item) and "Press key..." or "[ "..(item.key or "NONE").." ]"
+    local kw = D.text_size(ktxt, F.small)
+    D.text(x + w - kw - 2, y+10, State.binding == item and S.accent or S.text_dim, ktxt, F.small)
+
+    D.line(x, y + S.item_h - 1, x + w, y + S.item_h - 1, S.sep)
+
+    if I.lmb_pressed() and I.in_box(x, y, w, S.item_h) then
+        State.binding = (State.binding == item) and nil or item
+    end
+
+    -- Przechwytywanie klawisza
+    -- (Wymaga integracji z input.GetPressedKey() lub podobnym)
+
+    return S.item_h
+end
+
+local function render_multisel(item, x, y, w)
+    if not item.options or not item.values then return 0 end
+
+    local total_h = 0
+    local cols = 2
+    local col_w = math.floor(w / cols)
+
+    for i, opt in ipairs(item.options) do
+        local col = (i - 1) % cols
+        local row = math.floor((i - 1) / cols)
+        local ix  = x + col * col_w
+        local iy  = y + row * 20
+
+        local val = item.values[i]
+
+        -- Maly checkbox
+        if val then
+            D.rect(ix, iy+3, 12, 12, S.accent)
+            draw.Color(255,255,255,255)
+            draw.Line(ix+2,  iy+9,  ix+5,  iy+12)
+            draw.Line(ix+5,  iy+12, ix+11, iy+5)
+        else
+            D.rect(ix, iy+3, 12, 12, S.bg4)
+            D.outline(ix, iy+3, 12, 12, S.border)
+        end
+
+        D.text(ix+16, iy+4, val and S.text or S.text_dim, opt, F.small)
+
+        if I.lmb_pressed() and I.in_box(ix, iy, col_w, 20) then
+            item.values[i] = not item.values[i]
+            if item.callback then item.callback(i, item.values[i]) end
+        end
+
+        total_h = math.max(total_h, (row + 1) * 20)
+    end
+
+    return total_h + 6
+end
+
+local function render_button(item, x, y, w)
+    local hov = I.in_box(x, y, w, 26)
+    D.rect(x, y, w, 26, hov and S.accent or S.bg4)
+    D.outline(x, y, w, 26, hov and S.accent or S.border)
+    D.text_center(x, y+7, w, hov and S.white or S.text, item.label, F.normal)
+    if I.lmb_pressed() and hov and item.callback then
+        item.callback()
+    end
+    return 32
+end
+
+-- ================================================================
+--  RENDER: CONTENT PANEL
+-- ================================================================
+local _dd_draw_list = {}  -- dropdowny do narysowania na wierzchu
+
+local function draw_content()
+    local sec = Menu.sections[State.active_sec]
+    if not sec then return end
+    local tab = sec.tabs[State.active_tab]
+    if not tab then return end
+
+    local cx = S.win_x + S.sidebar_w
+    local cy = S.win_y + S.topbar_h
+    local cw = S.win_w - S.sidebar_w
+    local ch = S.win_h - S.topbar_h
+
+    D.rect(cx, cy, cw, ch, S.bg)
+
+    -- Clip (scissors) — jesli Twoje API wspiera
+    -- draw.SetScissor(cx, cy, cx+cw, cy+ch)
+
+    _dd_draw_list = {}
+
+    local px = cx + S.padding
+    local pw = cw - S.padding * 2
+    local py = cy + 12 + State.scroll_y
+
+    for _, panel in ipairs(tab.panels) do
+        -- Nazwa sekcji (MAIN / CHECKS / ACTIVATION)
+        local lw = D.text_size(panel.title, F.sec)
+        local line_y = py + 7
+        D.line(cx + S.padding, line_y, px + math.floor((pw - lw) / 2) - 8, line_y, S.sep)
+        D.text(px + math.floor((pw - lw) / 2), py+1, S.text_dim, panel.title, F.sec)
+        D.line(px + math.floor((pw - lw) / 2) + lw + 8, line_y, cx + cw - S.padding, line_y, S.sep)
+        py = py + 22
+
+        for _, item in ipairs(panel.items) do
+            local used = 0
+            local ix = px
+            local iw = pw
+
+            if     item.type == "checkbox" then used = render_checkbox(item, ix, py, iw)
+            elseif item.type == "toggle"   then used = render_toggle(item,   ix, py, iw)
+            elseif item.type == "slider"   then used = render_slider(item,   ix, py, iw)
+            elseif item.type == "keybind"  then used = render_keybind(item,  ix, py, iw)
+            elseif item.type == "multisel" then used = render_multisel(item, ix, py, iw)
+            elseif item.type == "button"   then used = render_button(item,   ix, py, iw)
+            elseif item.type == "dropdown" then
+                used = render_dropdown(item, ix, py, iw)
+                -- Zapisz pozycje do narysowania rozwinietego menu na wierzchu
+                table.insert(_dd_draw_list, {item=item, x=ix, y=py, w=iw})
+            end
+
+            py = py + used
+        end
+
+        py = py + 16  -- odstep miedzy sekcjami
+    end
+
+    -- Scroll — klikanie kolkiem (executor-specific)
+    -- if input.IsButtonDown(MOUSE_WHEEL_UP) and I.in_box(cx,cy,cw,ch) then
+    --     State.scroll_y = math.min(0, State.scroll_y + 20)
+    -- end
+
+    -- draw.SetScissor(0, 0, screen_w, screen_h)
+
+    -- Czerwony pasek scrollbara po prawej
+    D.rect(cx + cw - 4, cy, 4, ch, S.bg4)
+    D.rect(cx + cw - 4, cy, 4, 50, S.accent)
+end
+
+-- ================================================================
+--  RENDER: DROPDOWNY NA WIERZCHU
+-- ================================================================
+local function draw_open_dropdown()
+    if not State.open_dd then return end
+
+    for _, entry in ipairs(_dd_draw_list) do
+        if entry.item == State.open_dd then
+            local item = entry.item
+            local x    = entry.x
+            local y    = entry.y + S.item_h
+            local w    = entry.w
+            local oh   = #item.options * 24
+
+            D.rect(x, y, w, oh, S.bg3)
+            D.outline(x, y, w, oh, S.border)
+
+            for oi, opt in ipairs(item.options) do
+                local oy  = y + (oi-1) * 24
+                local hov = I.in_box(x, oy, w, 24)
+                local sel = (oi == item.value)
+
+                if sel then
+                    D.rect(x, oy, w, 24, S.bg4)
+                    D.rect(x, oy, 2, 24, S.accent)
+                elseif hov then
+                    D.rect(x, oy, w, 24, {30,30,30,255})
+                end
+
+                D.text(x+10, oy+7, sel and S.text_bright or S.text, opt, F.normal)
+
+                if I.lmb_pressed() and hov then
+                    item.value = oi
+                    if item.callback then item.callback(oi, opt) end
+                    State.open_dd = nil
+                end
+            end
+
+            return
+        end
+    end
+
+    -- Jesli nie znaleziono — zamknij
+    if I.lmb_pressed() then
+        State.open_dd = nil
+    end
+end
+
+-- ================================================================
+--  RENDER: DRAG
+-- ================================================================
+local function handle_drag()
+    local tx = S.win_x + S.sidebar_w
+    local ty = S.win_y
+    local tw = S.win_w - S.sidebar_w
+    local th = S.topbar_h
+
+    if I.lmb_pressed() and I.in_box(tx, ty, tw, th) then
+        -- Nie drag jesli klik na tabach
+        local sec = Menu.sections[State.active_sec]
+        if sec then
+            local tab_w = math.floor(tw / math.max(#sec.tabs, 1))
+            local tab_i = math.floor((select(1, I.mouse()) - tx) / tab_w) + 1
+            if tab_i < 1 or tab_i > #sec.tabs then
+                State.dragging = true
+                local mx, my = I.mouse()
+                State.drag_ox = mx - S.win_x
+                State.drag_oy = my - S.win_y
+            end
+        end
+    end
+
+    if not I.lmb_down() then
+        State.dragging = false
+    end
+
+    if State.dragging then
+        local mx, my = I.mouse()
+        S.win_x = mx - State.drag_ox
+        S.win_y = my - State.drag_oy
+    end
+end
+
+-- ================================================================
+--  RENDER: MAIN FRAME
+-- ================================================================
+local function on_draw()
+    if not State.visible then return end
+
+    -- Inicjalizacja czcionek (raz)
+    if not F.normal then init_fonts() end
+
+    handle_drag()
+
+    -- Ramka glowna
+    D.rect(S.win_x, S.win_y, S.win_w, S.win_h, S.bg)
+    D.outline(S.win_x, S.win_y, S.win_w, S.win_h, S.border)
+
+    draw_sidebar()
+    draw_topbar()
+    draw_content()
+    draw_open_dropdown()
+end
+
+-- ================================================================
+--  TICK  (toggle, keybind, scroll)
+-- ================================================================
+local function on_tick()
+    -- Toggle widocznosci (INSERT)
+    if I.key_pressed(KEY_INSERT) then
+        State.visible = not State.visible
+    end
+
+    -- Zamkniecie (END = panic)
+    if I.key_pressed(KEY_END) then
+        State.visible = false
+    end
+
+    -- Scroll (jesli executor wspiera GetMouseWheel)
+    -- local wheel = input.GetMouseWheel and input.GetMouseWheel() or 0
+    -- State.scroll_y = State.scroll_y + wheel * 20
+    -- State.scroll_y = math.min(0, State.scroll_y)
+end
+
+-- ================================================================
+--  REJESTRACJA CALLBACKOW
+--
+--  Synapse X / ScriptWare / Fluxus:
+--    callbacks.Draw:Add(on_draw)
+--    callbacks.CreateMove:Add(on_tick)
+--
+--  Roblox RunService:
+--    game:GetService("RunService").RenderStepped:Connect(on_draw)
+--    game:GetService("RunService").Heartbeat:Connect(on_tick)
+-- ================================================================
+
+if callbacks then
+    callbacks.Draw:Add(on_draw)
+    if callbacks.CreateMove then
+        callbacks.CreateMove:Add(on_tick)
+    end
+end
+
+-- ================================================================
+--  PRZYKLADOWE UZYCIE Z ZEWNATRZ
+-- ================================================================
+--[[
+    -- Odczyt
+    local enabled = Menu.get("Assistance", "Aimbot", "Enabled")
+    local fov     = Menu.get("Assistance", "Aimbot", "FOV")
+
+    -- Zapis
+    Menu.set("Assistance", "Aimbot", "Enabled", true)
+    Menu.set("Movement",   "General","Walk Speed", 24)
+
+    -- Config
+    Menu.save("moj_config.lua")
+    Menu.load("moj_config.lua")
+--]]
+
+print("[MOOZE UI] Zaladowano! INSERT = pokaz/ukryj | END = ukryj")
